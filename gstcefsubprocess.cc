@@ -20,7 +20,6 @@
 #include "include/wrapper/cef_message_router.h"
 #include <include/cef_app.h>
 #include <glib.h>
-
 #if defined(__APPLE__)
 #include "gstcefloader.h"
 #if defined(GST_CEF_USE_SANDBOX)
@@ -92,11 +91,52 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
     renderer_msg_router_ = CefMessageRouterRendererSide::Create(config);
   }
 
-  void OnContextCreated(CefRefPtr<CefBrowser> browser,
-                        CefRefPtr<CefFrame> frame,
-                        CefRefPtr<CefV8Context> context) override {
-    renderer_msg_router_->OnContextCreated(browser, frame, context);
-  }
+	void OnContextCreated(CefRefPtr<CefBrowser> browser,
+	                      CefRefPtr<CefFrame> frame,
+	                      CefRefPtr<CefV8Context> context) override {
+	  renderer_msg_router_->OnContextCreated(browser, frame, context);
+	  frame->ExecuteJavaScript(R"JS(
+	    (() => {
+	      if (window.__hanabiAudioBridgeInstalled)
+	        return;
+	      window.__hanabiAudioBridgeInstalled = true;
+
+	      let wallpaperAudioListenerValue = null;
+	      let latestAudioFrame = new Array(128).fill(0);
+
+	      const flushAudioFrame = () => {
+	        if (typeof wallpaperAudioListenerValue !== 'function')
+	          return;
+
+	        try {
+	          wallpaperAudioListenerValue(latestAudioFrame.slice());
+	        } catch (_e) {
+	        }
+	      };
+
+        Object.defineProperty(window, 'wallpaperRegisterAudioListener', {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value(callback) {
+            wallpaperAudioListenerValue = typeof callback === 'function' ? callback : null;
+            queueMicrotask(() => {
+              flushAudioFrame();
+            });
+          },
+        });
+
+	      window.__hanabiApplyAudioFrame = payload => {
+	        latestAudioFrame = Array.isArray(payload)
+	          ? payload.slice(0, 128)
+	          : new Array(128).fill(0);
+	        while (latestAudioFrame.length < 128)
+	          latestAudioFrame.push(0);
+	        flushAudioFrame();
+	      };
+	    })();
+	    )JS", frame->GetURL(), 0);
+	  }
 
   void OnContextReleased(CefRefPtr<CefBrowser> browser,
                          CefRefPtr<CefFrame> frame,
@@ -104,20 +144,23 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
     renderer_msg_router_->OnContextReleased(browser, frame, context);
   }
 
-  bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
-                                CefRefPtr<CefFrame> frame,
-                                CefProcessId source_process,
-                                CefRefPtr<CefProcessMessage> message) override {
-    return renderer_msg_router_->OnProcessMessageReceived(
-      browser, frame, source_process, message);
-  }
+	  void OnBrowserDestroyed(CefRefPtr<CefBrowser> browser) override {
+	  }
 
- private:
-  // Handles the renderer side of query routing.
-  CefRefPtr<CefMessageRouterRendererSide> renderer_msg_router_;
+	  bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
+	                                CefRefPtr<CefFrame> frame,
+	                                CefProcessId source_process,
+	                                CefRefPtr<CefProcessMessage> message) override {
+	    return renderer_msg_router_->OnProcessMessageReceived(
+	      browser, frame, source_process, message);
+	  }
 
-  IMPLEMENT_REFCOUNTING(RendererApp);
-  DISALLOW_COPY_AND_ASSIGN(RendererApp);
+	 private:
+	  // Handles the renderer side of query routing.
+	  CefRefPtr<CefMessageRouterRendererSide> renderer_msg_router_;
+
+	  IMPLEMENT_REFCOUNTING(RendererApp);
+	  DISALLOW_COPY_AND_ASSIGN(RendererApp);
 };
 
 int main(int argc, char * argv[])

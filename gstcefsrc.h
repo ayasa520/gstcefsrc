@@ -59,6 +59,9 @@ struct _GstCefSrc {
   gboolean gpu;
   gboolean sandbox;
   gboolean listen_for_js_signals;
+  gdouble device_scale_factor;
+  gboolean browser_suspended;
+  guint pointer_button_mask;
   gint chromium_debug_port;
   CefRefPtr<CefBrowser> browser;
   CefRefPtr<CefApp> app;
@@ -70,6 +73,10 @@ struct _GstCefSrc {
 
 struct _GstCefSrcClass {
   GstPushSrcClass parent_class;
+  void (*mouse_move)(GstCefSrc *src, gint x, gint y, gboolean mouse_leave);
+  void (*mouse_button)(GstCefSrc *src, gint x, gint y, gint button, gboolean mouse_up, gint click_count);
+  void (*mouse_wheel)(GstCefSrc *src, gint x, gint y, gint delta_x, gint delta_y);
+  void (*audio_frame)(GstCefSrc *src, const gchar *payload);
 };
 
 class BrowserApp : public CefApp, public CefBrowserProcessHandler {
