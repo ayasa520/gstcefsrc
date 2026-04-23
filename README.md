@@ -116,6 +116,35 @@ GST_PLUGIN_PATH=Release:$GST_PLUGIN_PATH gst-launch-1.0 \
 gst-launch-1.0 playbin uri=web+https://www.soundcloud.com/platform/sama
 ```
 
+## Hanabi Integration Additions
+
+<!-- Documentation note: Hanabi drives cefsrc from GJS/GStreamer rather than only from gst-launch,
+so the extra properties and action signals are documented here for the embedding API surface. -->
+
+Hanabi's optional web backend uses `cefsrc` as a live Chromium renderer and adds a small control
+surface for desktop-wallpaper behavior:
+
+- `device-scale-factor` (`double`, default `1.0`, mutable in READY): sets the CEF windowless device
+  scale factor and reports a logical view size of `caps-size / scale`. Hanabi uses this for HiDPI
+  monitors while keeping the GStreamer video caps at physical pixel size.
+- `browser-suspended` (`boolean`, default `false`, mutable while PLAYING): freezes or resumes the
+  Chromium page lifecycle while preserving the last rendered frame. When suspended, `cefsrc` pauses
+  page audio/video elements, suspends any audio contexts exposed through `window.__hanabiAudioContexts`,
+  dispatches `hanabi-playback-change`, calls `window.__hanabiSetPaused?.(true)`, sets the DevTools
+  lifecycle state to `frozen`, and hides the off-screen browser host. Resuming reverses those steps,
+  calls `window.__hanabiSetPaused?.(false)`, refreshes screen information, resizes, and invalidates
+  the view.
+
+The element also exposes action signals that embedders can emit:
+
+- `mouse-move(int x, int y, boolean mouse_leave)`: forwards pointer movement to CEF.
+- `mouse-button(int x, int y, int button, boolean mouse_up, int click_count)`: forwards button
+  transitions and tracks the active button mask for CEF modifiers.
+- `mouse-wheel(int x, int y, int delta_x, int delta_y)`: forwards wheel deltas to CEF.
+- `audio-frame(string payload)`: treats `payload` as a JavaScript expression and executes
+  `window.__hanabiApplyAudioFrame?.(<payload>)` in the page. Hanabi sends JSON-encoded spectrum
+  samples so Wallpaper Engine-style web bridges can deliver audio data to page scripts.
+
 ### Note on Global CEF Parameters
 
 This note is only relevant if you want to run multiple cefsrc instances in the same process.
